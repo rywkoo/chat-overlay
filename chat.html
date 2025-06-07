@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Unified Twitch + Kick Chat</title>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Gluten:wght@300&family=Sniglet&display=swap" rel="stylesheet">
+
+  <style>
+    /* === Your Custom CSS Below === */
+    @import url('https://fonts.googleapis.com/css2?family=Gluten:wght@300&family=Sniglet&display=swap');
+
+    .colon {
+      display: none;
+    }
+
+    .badges {
+      display: none;
+    }
+
+    body {
+      background-color: black;
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+    }
+
+    #chat-container { 
+      max-width: 800px;
+      margin: 0 auto;
+      overflow-y: auto;
+      height: 100vh;
+      padding: 10px;
+    }
+
+    .chat-line {
+      display: block;
+      position: relative;
+      padding: 0 20px;
+      width: 100%;
+    }
+
+    .message {
+      display: block;
+      background-color: var(--colorTWO);
+      z-index: 0;
+      text-shadow: none;
+      overflow: hidden;
+      padding: 1.2em 1.1em !important;
+      font-family: var(--fontFAMILY);
+      letter-spacing: 1px;
+      color: var(--colorONE) !important;
+      border-radius: 50px;
+      border: 3px solid var(--colorONE);
+      animation: popIn 0.5s ease backwards;
+      transform-origin: bottom left;
+    }
+
+    .message.sub {
+      border: 3px solid var(--colorTHREE);
+    }
+
+    .username {
+      display: block;
+      width: max-content;
+      text-align: left;
+      padding: 0.3em 0.7em !important;
+      background-color: var(--colorONE);
+      font-family: var(--fontFAMILY);
+      letter-spacing: 2px;
+      color: var(--colorTWO) !important;
+      z-index: 2;
+      position: relative;
+      top: 15px;
+      left: -10px;
+      border-radius: 25px;
+      animation: rulerWiggle 3s ease-in-out forwards;
+      transform-origin: bottom left;
+      overflow: visible;
+    }
+
+    .username.sub {
+      background-color: var(--colorTHREE);
+    }
+
+    .username.sub::after {
+      content: "⭐";
+      position: absolute;
+      left: 10%;
+      bottom: -40%;
+      transform: translateX(-50%);
+      font-size: 30px;
+      color: gold;
+      opacity: 1;
+      white-space: nowrap;
+      animation: bounceSpin 1.5s ease-out forwards;
+      z-index: 10;
+    }
+
+    @keyframes rulerWiggle {
+      0% { transform: rotate(7deg); }
+      10% { transform: rotate(-9deg); }
+      20% { transform: rotate(-4deg); }
+      30% { transform: rotate(-6deg); }
+      40% { transform: rotate(-3deg); }
+      50% { transform: rotate(-5deg); }
+      60% { transform: rotate(-4deg); }
+      70% { transform: rotate(-5.5deg); }
+      80% { transform: rotate(-4.5deg); }
+      90% { transform: rotate(-5.2deg); }
+      100% { transform: rotate(-5deg); }
+    }
+
+    @keyframes popIn {
+      0% { transform: scale(0); opacity: 0; }
+      100% { transform: scale(1); }
+    }
+
+    @keyframes bounceSpin {
+      0% {
+        transform: translateX(-50%) translateY(0) rotate(0deg);
+        opacity: 0;
+      }
+      30% {
+        transform: translateX(-50%) translateY(-5px) rotate(180deg);
+        opacity: 0.6;
+      }
+      50% {
+        transform: translateX(-50%) translateY(-2px) rotate(270deg);
+        opacity: 1;
+      }
+      80% {
+        transform: translateX(-50%) rotate(340deg);
+        opacity: 1;
+      }
+      100% {
+        transform: translateX(-50%) translateY(0px) rotate(360deg);
+        opacity: 1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="chat-container"></div>
+
+  <script>
+    const chatContainer = document.getElementById("chat-container");
+
+    function addMessage(username, message, isSub = false) {
+      const line = document.createElement("div");
+      line.className = "chat-line";
+
+      const userSpan = document.createElement("span");
+      userSpan.className = `username ${isSub ? 'sub' : ''}`;
+      userSpan.textContent = username;
+
+      const msgSpan = document.createElement("span");
+      msgSpan.className = `message ${isSub ? 'sub' : ''}`;
+      msgSpan.innerHTML = `<span class="colon">:</span> ${message}`;
+
+      line.appendChild(userSpan);
+      line.appendChild(msgSpan);
+
+      chatContainer.appendChild(line);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    // ===== CONNECT TO TWITCH CHAT =====
+    const twitchSocket = new WebSocket("wss://irc-ws.chat.twitch.tv");
+
+    twitchSocket.addEventListener("open", () => {
+      twitchSocket.send("CAP REQ :twitch.tv/tags");
+      twitchSocket.send("NICK justinfan12345"); // Anonymous viewer
+      twitchSocket.send("JOIN #rywko"); // Your Twitch channel
+    });
+
+    twitchSocket.addEventListener("message", (event) => {
+      const raw = event.data;
+      if (raw.includes("PRIVMSG")) {
+        const usernameMatch = raw.match(/display-name=([^;]+)/i);
+        const subMatch = raw.includes("subscriber=1") || raw.includes("founder=1");
+        const messageMatch = raw.match(/:(.+?)!.* PRIVMSG #.+? :(.+)/i);
+
+        const username = usernameMatch ? usernameMatch[1] : "Unknown";
+        const message = messageMatch ? messageMatch[2] : raw;
+
+        addMessage(username, message, subMatch);
+      }
+    });
+
+    // ===== CONNECT TO KICK CHAT =====
+    const kickWs = new WebSocket("wss://ws-us2.pusher.com/app/kick_2?protocol=7&client=js&version=7.6.0&flash=false");
+
+    kickWs.addEventListener("open", () => {
+      kickWs.send(JSON.stringify({
+        "event": "pusher:subscribe",
+        "data": { "channel": "chatrooms.6634597.chat" } // Your Kick chatroom ID
+      }));
+    });
+
+    kickWs.addEventListener("message", (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data?.event === 'App\\Events\\ChatMessageEvent') {
+          const msgData = JSON.parse(data.data);
+          const username = msgData.message.user.username;
+          const message = msgData.message.message;
+          const isSub = msgData.message.user.is_subscribed;
+          addMessage(username, message, isSub);
+        }
+      } catch (e) {
+        console.error("Error parsing Kick message:", e);
+      }
+    });
+  </script>
+</body>
+</html>
